@@ -14,6 +14,33 @@ app.use((req, res, next) => {
 });
 
 // ========================================
+// eBay デバッグ（原因調査用）
+// ========================================
+app.get('/api/ebay-debug', async (req, res) => {
+  const keyword = req.query.keyword || 'Canon camera';
+  const encoded = encodeURIComponent(keyword);
+  const appId = process.env.EBAY_APP_ID || '(未設定)';
+  const url = [
+    'https://svcs.ebay.com/services/search/FindingService/v1',
+    '?OPERATION-NAME=findCompletedItems',
+    '&SERVICE-VERSION=1.0.0',
+    `&SECURITY-APPNAME=${appId}`,
+    '&RESPONSE-DATA-FORMAT=JSON',
+    `&keywords=${encoded}`,
+    '&itemFilter(0).name=SoldItemsOnly&itemFilter(0).value=true',
+    '&sortOrder=EndTimeSoonest',
+    '&paginationInput.entriesPerPage=3'
+  ].join('');
+  try {
+    const ebayRes = await fetch(url);
+    const text = await ebayRes.text();
+    res.json({ appIdSet: appId !== '(未設定)', appIdPrefix: appId.substring(0, 8), url: url.replace(appId, '***'), raw: text.substring(0, 2000) });
+  } catch (e) {
+    res.json({ error: e.message });
+  }
+});
+
+// ========================================
 // 店頭モード API：eBay価格 + ヤフオク検索
 // ========================================
 app.get('/api/ebay', async (req, res) => {
