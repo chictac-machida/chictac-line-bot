@@ -80,6 +80,150 @@ app.get('/api/ebay', async (req, res) => {
   }
 });
 
+// ========================================
+// 自動仕入れスキャン API
+// ========================================
+const SCAN_TARGETS = [
+  // カメラ本体
+  { category: 'カメラ', keyword: 'Canon EOS R6 body',           buyMax: 180000 },
+  { category: 'カメラ', keyword: 'Sony A7III body',              buyMax: 160000 },
+  { category: 'カメラ', keyword: 'Sony A7C body',                buyMax: 140000 },
+  { category: 'カメラ', keyword: 'Fujifilm X-T4 body',          buyMax: 130000 },
+  { category: 'カメラ', keyword: 'Nikon Z6 body',                buyMax: 120000 },
+  { category: 'カメラ', keyword: 'Ricoh GR IIIx',               buyMax: 80000  },
+  { category: 'カメラ', keyword: 'Canon EOS R5 body',           buyMax: 300000 },
+  // レンズ
+  { category: 'レンズ', keyword: 'Canon RF 50mm f1.2',          buyMax: 180000 },
+  { category: 'レンズ', keyword: 'Leica Summicron 50mm',        buyMax: 120000 },
+  { category: 'レンズ', keyword: 'Voigtlander 35mm f1.4 VM',   buyMax: 60000  },
+  { category: 'レンズ', keyword: 'Nikon AF-S 50mm f1.4G',      buyMax: 30000  },
+  // レトロゲーム
+  { category: 'レトロゲーム', keyword: 'Nintendo Game Boy original',     buyMax: 5000  },
+  { category: 'レトロゲーム', keyword: 'Super Famicom console Japan',    buyMax: 8000  },
+  { category: 'レトロゲーム', keyword: 'Nintendo 64 console Japan',      buyMax: 10000 },
+  { category: 'レトロゲーム', keyword: 'Sega Saturn console Japan',      buyMax: 12000 },
+  { category: 'レトロゲーム', keyword: 'Neo Geo Pocket Color',           buyMax: 15000 },
+  // 腕時計
+  { category: '腕時計', keyword: 'Seiko 5 vintage automatic',           buyMax: 15000 },
+  { category: '腕時計', keyword: 'Casio G-Shock DW-5600 vintage',       buyMax: 8000  },
+  { category: '腕時計', keyword: 'Citizen Bullhead chronograph vintage', buyMax: 20000 },
+  { category: '腕時計', keyword: 'Orient Star automatic vintage',        buyMax: 25000 },
+  // ポケモンカード
+  { category: 'ポケカ', keyword: 'Pokemon card Japanese Charizard holo', buyMax: 5000  },
+  { category: 'ポケカ', keyword: 'Pokemon card Japanese booster box',    buyMax: 8000  },
+  { category: 'ポケカ', keyword: 'Pokemon Japanese 1st edition base set',buyMax: 10000 },
+  // ビンテージオーディオ
+  { category: 'オーディオ', keyword: 'Sony Walkman TPS-L2',             buyMax: 15000 },
+  { category: 'オーディオ', keyword: 'Sony Walkman WM-2',               buyMax: 8000  },
+  { category: 'オーディオ', keyword: 'Technics SL-1200 turntable',      buyMax: 40000 },
+  // フィギュア・ホビー
+  { category: 'フィギュア', keyword: 'Bandai Perfect Grade Gundam',     buyMax: 15000 },
+  { category: 'フィギュア', keyword: 'Dragon Ball figure vintage Japan', buyMax: 5000  },
+  { category: 'フィギュア', keyword: 'Medicom RAH figure Japan',        buyMax: 20000 },
+];
+
+async function getEbayPriceForMonitor(keyword, appId) {
+  const encoded = encodeURIComponent(keyword);
+  const url = [
+    'https://svcs.ebay.com/services/search/FindingService/v1',
+    '?OPERATION-NAME=findCompletedItems',
+    '&SERVICE-VERSION=1.0.0',
+    `&SECURITY-APPNAME=${appId}`,
+    '&RESPONSE-DATA-FORMAT=JSON',
+    `&keywords=${encoded}`,
+    '&itemFilter(0).name=SoldItemsOnly&itemFilter(0).value=true',
+    '&sortOrder=EndTimeSoonest',
+    '&paginationInput.entriesPerPage=20'
+  ].join('');
+  try {
+    const res   = await fetch(url);
+    const json  = await res.json();
+    const items = json?.findCompletedItemsResponse?.[0]?.searchResult?.[0]?.item || [];
+    const prices = items
+      .map(i => parseFloat(i.sellingStatus?.[0]?.convertedCurrentPrice?.[0]?.__value__ || 0))
+      .filter(p => p > 0);
+    if (prices.length < 3) return null;
+    const avg = prices.reduce((a, b) => a + b, 0) / prices.length;
+    return { avg, count: prices.length };
+  } catch (e) { return null; }
+}
+
+app.get('/api/monitor', async (req, res) => {
+  const secret = req.query.secret;
+  if (secret !== process.env.MONITOR_SECRET && process.env.MONITOR_SECRET) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+
+  try {
+    let rate = 150;
+    try {
+      const fx = await fetch('https://open.er-api.com/v6/latest/USD');
+      const fxData = await fx.json();
+      rate = Math.round(fxData.rates.JPY);
+    } catch (e) {}
+
+    const results = [];
+    for (const target of SCAN_TARGETS) {
+      const price = await getEbayPriceForMonitor(target.keyword, process.env.EBAY_APP_ID);
+      if (!price) continue;
+      const avgJpy = Math.round(price.avg * rate);
+      const fee    = Math.round(avgJpy * 0.13);
+      const net    = avgJpy - fee;
+      const profit = net - target.buyMax;
+      const margin = profit / avgJpy;
+      results.push({ ...target, avgJpy, net, profit, margin, count: price.count });
+      await new Promise(r => setTimeout(r, 300));
+    }
+
+    results.sort((a, b) => b.margin - a.margin);
+    const buys  = results.filter(r => r.margin >= 0.20);
+    const check = results.filter(r => r.margin >= 0 && r.margin < 0.20);
+    const ng    = results.filter(r => r.margin < 0);
+
+    const today = new Date().toLocaleDateString('ja-JP');
+    let msg = `📊 仕入れ候補レポート ${today}\n1USD=¥${rate}\nスキャン${SCAN_TARGETS.length}種 → データ${results.length}件\n`;
+
+    if (buys.length > 0) {
+      msg += `\n💚━ 買い！（利益率20%超）━\n`;
+      buys.slice(0, 5).forEach(r => {
+        msg += `\n【${r.category}】${r.keyword}\n`;
+        msg += ` eBay売値 ¥${r.avgJpy.toLocaleString()} 手取¥${r.net.toLocaleString()}\n`;
+        msg += ` 仕入上限¥${r.buyMax.toLocaleString()} → 利益¥${r.profit.toLocaleString()}（${Math.round(r.margin*100)}%）\n`;
+        msg += ` 参照${r.count}件\n`;
+      });
+    } else {
+      msg += `\n💚 利益率20%超の商品はなし\n`;
+    }
+
+    if (check.length > 0) {
+      msg += `\n🟡━ 要検討（黒字）━\n`;
+      check.slice(0, 3).forEach(r => {
+        msg += `【${r.category}】${r.keyword} 利益¥${r.profit.toLocaleString()}（${Math.round(r.margin*100)}%）\n`;
+      });
+    }
+
+    msg += `\n🔴 NG: ${ng.length}件`;
+
+    if (process.env.CHANNEL_ACCESS_TOKEN && process.env.OWNER_USER_ID) {
+      await fetch('https://api.line.me/v2/bot/message/push', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.CHANNEL_ACCESS_TOKEN}`
+        },
+        body: JSON.stringify({
+          to: process.env.OWNER_USER_ID,
+          messages: [{ type: 'text', text: msg }]
+        })
+      });
+    }
+
+    res.json({ ok: true, buys: buys.length, check: check.length, ng: ng.length, rate, message: msg });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 const CHANNEL_ACCESS_TOKEN = process.env.CHANNEL_ACCESS_TOKEN;
 const CHANNEL_SECRET = process.env.CHANNEL_SECRET;
 const OWNER_USER_ID = process.env.OWNER_USER_ID;
