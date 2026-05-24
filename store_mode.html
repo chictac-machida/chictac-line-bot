@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>仕入れ判定 - ちっくたっく</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, sans-serif;
+    background: #0f0f0f;
+    color: #fff;
+    min-height: 100vh;
+    padding: 20px;
+  }
+  h1 {
+    text-align: center;
+    font-size: 18px;
+    color: #aaa;
+    margin-bottom: 24px;
+    letter-spacing: 2px;
+  }
+  .search-box {
+    background: #1a1a1a;
+    border-radius: 16px;
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+  input[type="text"], input[type="number"] {
+    width: 100%;
+    background: #2a2a2a;
+    border: 1px solid #333;
+    border-radius: 10px;
+    padding: 14px 16px;
+    font-size: 16px;
+    color: #fff;
+    margin-bottom: 12px;
+    outline: none;
+  }
+  input::placeholder { color: #555; }
+  input:focus { border-color: #4CAF50; }
+  .btn {
+    width: 100%;
+    padding: 16px;
+    border: none;
+    border-radius: 10px;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    margin-bottom: 8px;
+  }
+  .btn-main { background: #4CAF50; color: #fff; }
+  .btn-scan { background: #2196F3; color: #fff; }
+  .btn-main:active { background: #388E3C; }
+  .btn-scan:active { background: #1565C0; }
+
+  /* カメラスキャン */
+  #scanner-area {
+    display: none;
+    background: #1a1a1a;
+    border-radius: 16px;
+    padding: 16px;
+    margin-bottom: 16px;
+    text-align: center;
+  }
+  #scanner-area video {
+    width: 100%;
+    border-radius: 10px;
+    max-height: 240px;
+    object-fit: cover;
+  }
+  #scanner-status { color: #aaa; font-size: 14px; margin-top: 8px; }
+
+  /* 結果表示 */
+  #result { display: none; }
+  .result-card {
+    background: #1a1a1a;
+    border-radius: 16px;
+    padding: 20px;
+    margin-bottom: 12px;
+  }
+  .result-title {
+    font-size: 18px;
+    font-weight: bold;
+    margin-bottom: 16px;
+    color: #fff;
+  }
+  .price-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid #2a2a2a;
+  }
+  .price-row:last-child { border-bottom: none; }
+  .price-label { color: #888; font-size: 14px; }
+  .price-value { font-size: 18px; font-weight: bold; color: #fff; }
+
+  .judgment {
+    border-radius: 16px;
+    padding: 24px;
+    text-align: center;
+    margin-bottom: 12px;
+  }
+  .judgment.buy    { background: #1B5E20; border: 2px solid #4CAF50; }
+  .judgment.check  { background: #E65100; border: 2px solid #FF9800; }
+  .judgment.no     { background: #B71C1C; border: 2px solid #F44336; }
+  .judgment-icon   { font-size: 48px; margin-bottom: 8px; }
+  .judgment-text   { font-size: 24px; font-weight: bold; }
+  .judgment-profit { font-size: 16px; color: #ccc; margin-top: 8px; }
+
+  .yahoo-section {
+    background: #1a1a1a;
+    border-radius: 16px;
+    padding: 20px;
+    margin-bottom: 12px;
+  }
+  .yahoo-title { font-size: 16px; color: #aaa; margin-bottom: 12px; }
+  .yahoo-item {
+    background: #2a2a2a;
+    border-radius: 10px;
+    padding: 12px;
+    margin-bottom: 8px;
+  }
+  .yahoo-item-name { font-size: 14px; color: #fff; margin-bottom: 4px; }
+  .yahoo-item-price { font-size: 18px; font-weight: bold; color: #4CAF50; }
+  .yahoo-item-meta { font-size: 12px; color: #888; margin-top: 4px; }
+  .yahoo-link {
+    display: block;
+    text-align: center;
+    color: #2196F3;
+    font-size: 14px;
+    margin-top: 8px;
+    text-decoration: none;
+  }
+
+  .loading {
+    text-align: center;
+    padding: 40px;
+    color: #888;
+    font-size: 16px;
+  }
+  .spinner {
+    width: 40px; height: 40px;
+    border: 3px solid #333;
+    border-top-color: #4CAF50;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 0 auto 16px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .error-msg { color: #F44336; text-align: center; padding: 20px; }
+</style>
+</head>
+<body>
+
+<h1>🔍 仕入れ判定</h1>
+
+<!-- 入力エリア -->
+<div class="search-box">
+  <input type="text" id="keyword" placeholder="商品名・型番を入力（例：Canon EOS R5）" autocomplete="off">
+  <input type="number" id="store-price" placeholder="店頭価格を入力（円）" min="0">
+  <button class="btn btn-main" onclick="search()">📊 相場を調べる</button>
+  <button class="btn btn-scan" onclick="startScan()">📷 バーコードスキャン</button>
+</div>
+
+<!-- スキャンエリア -->
+<div id="scanner-area">
+  <video id="scanner-video" autoplay playsinline muted></video>
+  <p id="scanner-status">バーコードを枠内に合わせてください</p>
+  <button class="btn btn-scan" style="margin-top:12px" onclick="stopScan()">✕ キャンセル</button>
+</div>
+
+<!-- 結果エリア -->
+<div id="result"></div>
+
+<script>
+const API_BASE = 'https://chictac-line-bot.onrender.com';
+
+// ========================================
+// 相場検索
+// ========================================
+async function search() {
+  const keyword = document.getElementById('keyword').value.trim();
+  const storePrice = parseInt(document.getElementById('store-price').value) || 0;
+
+  if (!keyword) {
+    alert('商品名を入力してください');
+    return;
+  }
+
+  showLoading();
+
+  try {
+    const res  = await fetch(`${API_BASE}/api/ebay?keyword=${encodeURIComponent(keyword)}`);
+    const data = await res.json();
+    showResult(keyword, storePrice, data);
+  } catch (e) {
+    document.getElementById('result').innerHTML =
+      '<div class="error-msg">通信エラーが発生しました。<br>Wi-Fiを確認してください。</div>';
+    document.getElementById('result').style.display = 'block';
+  }
+}
+
+// ========================================
+// 結果表示
+// ========================================
+function showResult(keyword, storePrice, data) {
+  const result = document.getElementById('result');
+
+  if (!data.avg || data.avg === 0) {
+    result.innerHTML = `
+      <div class="result-card">
+        <div class="result-title">「${keyword}」</div>
+        <p style="color:#888;text-align:center">eBayの価格データが見つかりませんでした。<br>別のキーワードで試してください。</p>
+      </div>`;
+    result.style.display = 'block';
+    return;
+  }
+
+  const fee    = Math.round(data.avg * 0.13);
+  const profit = storePrice > 0 ? data.avg - fee - storePrice : null;
+
+  let judgmentHtml = '';
+  if (profit !== null) {
+    const ratio = profit / data.avg;
+    const cls   = ratio >= 0.20 ? 'buy' : ratio >= 0 ? 'check' : 'no';
+    const icon  = cls === 'buy' ? '💚' : cls === 'check' ? '🟡' : '🔴';
+    const text  = cls === 'buy' ? '買い！' : cls === 'check' ? '要検討' : 'NG';
+    judgmentHtml = `
+      <div class="judgment ${cls}">
+        <div class="judgment-icon">${icon}</div>
+        <div class="judgment-text">${text}</div>
+        <div class="judgment-profit">推定利益 ¥${profit.toLocaleString()}（利益率${Math.round(ratio*100)}%）</div>
+      </div>`;
+  }
+
+  // ヤフオク表示
+  let yahooHtml = '';
+  if (data.yahoo && data.yahoo.length > 0) {
+    const items = data.yahoo.slice(0, 3).map(item => `
+      <div class="yahoo-item">
+        <div class="yahoo-item-name">${item.title}</div>
+        <div class="yahoo-item-price">¥${parseInt(item.price).toLocaleString()}</div>
+        <div class="yahoo-item-meta">残り ${item.timeLeft} ／ 入札 ${item.bids}件</div>
+      </div>`).join('');
+    yahooHtml = `
+      <div class="yahoo-section">
+        <div class="yahoo-title">📦 ヤフオク出品中（${data.yahoo.length}件）</div>
+        ${items}
+        <a class="yahoo-link" href="https://auctions.yahoo.co.jp/search/search?p=${encodeURIComponent(keyword)}" target="_blank">
+          ヤフオクで全件見る →
+        </a>
+      </div>`;
+  } else {
+    yahooHtml = `
+      <div class="yahoo-section">
+        <div class="yahoo-title">📦 ヤフオク</div>
+        <p style="color:#888;text-align:center;font-size:14px">出品中の商品が見つかりませんでした</p>
+      </div>`;
+  }
+
+  result.innerHTML = `
+    ${judgmentHtml}
+    <div class="result-card">
+      <div class="result-title">📷 ${keyword}</div>
+      <div class="price-row">
+        <span class="price-label">eBay平均売値</span>
+        <span class="price-value">¥${data.avg.toLocaleString()}</span>
+      </div>
+      <div class="price-row">
+        <span class="price-label">eBay手数料（13%）</span>
+        <span class="price-value" style="color:#F44336">-¥${fee.toLocaleString()}</span>
+      </div>
+      <div class="price-row">
+        <span class="price-label">手取り</span>
+        <span class="price-value" style="color:#4CAF50">¥${(data.avg - fee).toLocaleString()}</span>
+      </div>
+      ${storePrice > 0 ? `
+      <div class="price-row">
+        <span class="price-label">店頭価格</span>
+        <span class="price-value">¥${storePrice.toLocaleString()}</span>
+      </div>` : `
+      <div class="price-row">
+        <span class="price-label">仕入上限目安</span>
+        <span class="price-value" style="color:#FF9800">¥${Math.round((data.avg-fee)*0.75).toLocaleString()}</span>
+      </div>`}
+      <div class="price-row">
+        <span class="price-label">eBay参照件数</span>
+        <span class="price-value">${data.count}件</span>
+      </div>
+    </div>
+    ${yahooHtml}`;
+
+  result.style.display = 'block';
+}
+
+// ========================================
+// ローディング表示
+// ========================================
+function showLoading() {
+  const result = document.getElementById('result');
+  result.innerHTML = `
+    <div class="loading">
+      <div class="spinner"></div>
+      eBay・ヤフオクを調査中...
+    </div>`;
+  result.style.display = 'block';
+}
+
+// ========================================
+// バーコードスキャン
+// ========================================
+let scanStream = null;
+let scanInterval = null;
+
+async function startScan() {
+  const area = document.getElementById('scanner-area');
+  const video = document.getElementById('scanner-video');
+
+  try {
+    scanStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment' }
+    });
+    video.srcObject = scanStream;
+    area.style.display = 'block';
+
+    if ('BarcodeDetector' in window) {
+      const detector = new BarcodeDetector({ formats: ['ean_13','ean_8','upc_a','upc_e','code_128','code_39'] });
+      scanInterval = setInterval(async () => {
+        try {
+          const codes = await detector.detect(video);
+          if (codes.length > 0) {
+            const code = codes[0].rawValue;
+            document.getElementById('keyword').value = code;
+            document.getElementById('scanner-status').textContent = `読取: ${code}`;
+            stopScan();
+            search();
+          }
+        } catch (e) {}
+      }, 500);
+    } else {
+      document.getElementById('scanner-status').textContent =
+        'このブラウザはスキャン非対応です。Chromeをお使いください。';
+    }
+  } catch (e) {
+    alert('カメラへのアクセスを許可してください');
+  }
+}
+
+function stopScan() {
+  if (scanStream) { scanStream.getTracks().forEach(t => t.stop()); scanStream = null; }
+  if (scanInterval) { clearInterval(scanInterval); scanInterval = null; }
+  document.getElementById('scanner-area').style.display = 'none';
+}
+
+// Enterキーで検索
+document.getElementById('keyword').addEventListener('keydown', e => {
+  if (e.key === 'Enter') search();
+});
+</script>
+</body>
+</html>
