@@ -8,6 +8,79 @@ app.use(express.json({
   verify: (req, res, buf) => { req.rawBody = buf; }
 }));
 
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  next();
+});
+
+// ========================================
+// 店頭モード API：eBay価格 + ヤフオク検索
+// ========================================
+app.get('/api/ebay', async (req, res) => {
+  const keyword = req.query.keyword;
+  if (!keyword) return res.json({ error: 'keyword required' });
+
+  try {
+    const encoded = encodeURIComponent(keyword);
+    const ebayUrl = [
+      'https://svcs.ebay.com/services/search/FindingService/v1',
+      '?OPERATION-NAME=findCompletedItems',
+      '&SERVICE-VERSION=1.0.0',
+      `&SECURITY-APPNAME=${process.env.EBAY_APP_ID}`,
+      '&RESPONSE-DATA-FORMAT=JSON',
+      `&keywords=${encoded}`,
+      '&itemFilter(0).name=SoldItemsOnly&itemFilter(0).value=true',
+      '&itemFilter(1).name=ListingType&itemFilter(1).value=FixedPrice',
+      '&sortOrder=EndTimeSoonest',
+      '&paginationInput.entriesPerPage=20'
+    ].join('');
+
+    // 為替レート取得
+    let rate = 150;
+    try {
+      const fx = await fetch('https://open.er-api.com/v6/latest/USD');
+      const fxData = await fx.json();
+      rate = Math.round(fxData.rates.JPY);
+    } catch (e) {}
+
+    // eBay価格取得
+    const ebayRes  = await fetch(ebayUrl);
+    const ebayData = await ebayRes.json();
+    const items    = ebayData?.findCompletedItemsResponse?.[0]
+                              ?.searchResult?.[0]?.item || [];
+
+    const prices = items
+      .map(i => parseFloat(i.sellingStatus?.[0]?.convertedCurrentPrice?.[0]?.__value__ || 0))
+      .filter(p => p > 0);
+
+    const avg = prices.length > 0
+      ? Math.round((prices.reduce((a,b) => a+b, 0) / prices.length) * rate)
+      : 0;
+
+    // ヤフオク検索
+    let yahoo = [];
+    if (process.env.YAHOO_APP_ID) {
+      try {
+        const yahooUrl = `https://auctions.yahooapis.jp/AuctionWebService/V2/json/search?appid=${process.env.YAHOO_APP_ID}&query=${encoded}&output=json&hits=5&sort=end`;
+        const yahooRes  = await fetch(yahooUrl);
+        const yahooData = await yahooRes.json();
+        const yahooItems = yahooData?.ResultSet?.Result?.Item || [];
+        yahoo = (Array.isArray(yahooItems) ? yahooItems : [yahooItems]).map(item => ({
+          title:    item.Title,
+          price:    item.CurrentPrice,
+          bids:     item.Bids || 0,
+          timeLeft: item.EndTime ? new Date(item.EndTime).toLocaleDateString('ja-JP') : '不明',
+          url:      item.AuctionItemUrl
+        }));
+      } catch (e) {}
+    }
+
+    res.json({ avg, count: prices.length, rate, yahoo });
+  } catch (e) {
+    res.json({ error: e.message, avg: 0, count: 0, yahoo: [] });
+  }
+});
+
 const CHANNEL_ACCESS_TOKEN = process.env.CHANNEL_ACCESS_TOKEN;
 const CHANNEL_SECRET = process.env.CHANNEL_SECRET;
 const OWNER_USER_ID = process.env.OWNER_USER_ID;
