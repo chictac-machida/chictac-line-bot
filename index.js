@@ -30,7 +30,6 @@ app.get('/api/ebay', async (req, res) => {
       '&RESPONSE-DATA-FORMAT=JSON',
       `&keywords=${encoded}`,
       '&itemFilter(0).name=SoldItemsOnly&itemFilter(0).value=true',
-      '&itemFilter(1).name=ListingType&itemFilter(1).value=FixedPrice',
       '&sortOrder=EndTimeSoonest',
       '&paginationInput.entriesPerPage=20'
     ].join('');
