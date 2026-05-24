@@ -111,42 +111,28 @@ app.get('/api/ebay', async (req, res) => {
 // 自動仕入れスキャン API
 // ========================================
 const SCAN_TARGETS = [
-  // カメラ本体
-  { category: 'カメラ', keyword: 'Canon EOS R6 body',           buyMax: 180000 },
-  { category: 'カメラ', keyword: 'Sony A7III body',              buyMax: 160000 },
-  { category: 'カメラ', keyword: 'Sony A7C body',                buyMax: 140000 },
-  { category: 'カメラ', keyword: 'Fujifilm X-T4 body',          buyMax: 130000 },
-  { category: 'カメラ', keyword: 'Nikon Z6 body',                buyMax: 120000 },
-  { category: 'カメラ', keyword: 'Ricoh GR IIIx',               buyMax: 80000  },
-  { category: 'カメラ', keyword: 'Canon EOS R5 body',           buyMax: 300000 },
+  // カメラ本体（人気4種に絞る）
+  { category: 'カメラ', keyword: 'Canon EOS R6 body',        buyMax: 180000 },
+  { category: 'カメラ', keyword: 'Sony A7III body',           buyMax: 160000 },
+  { category: 'カメラ', keyword: 'Fujifilm X-T4 body',       buyMax: 130000 },
+  { category: 'カメラ', keyword: 'Ricoh GR IIIx',            buyMax: 80000  },
   // レンズ
-  { category: 'レンズ', keyword: 'Canon RF 50mm f1.2',          buyMax: 180000 },
-  { category: 'レンズ', keyword: 'Leica Summicron 50mm',        buyMax: 120000 },
-  { category: 'レンズ', keyword: 'Voigtlander 35mm f1.4 VM',   buyMax: 60000  },
-  { category: 'レンズ', keyword: 'Nikon AF-S 50mm f1.4G',      buyMax: 30000  },
+  { category: 'レンズ', keyword: 'Leica Summicron 50mm',     buyMax: 120000 },
+  { category: 'レンズ', keyword: 'Voigtlander 35mm f1.4 VM',buyMax: 60000  },
   // レトロゲーム
-  { category: 'レトロゲーム', keyword: 'Nintendo Game Boy original',     buyMax: 5000  },
-  { category: 'レトロゲーム', keyword: 'Super Famicom console Japan',    buyMax: 8000  },
-  { category: 'レトロゲーム', keyword: 'Nintendo 64 console Japan',      buyMax: 10000 },
-  { category: 'レトロゲーム', keyword: 'Sega Saturn console Japan',      buyMax: 12000 },
-  { category: 'レトロゲーム', keyword: 'Neo Geo Pocket Color',           buyMax: 15000 },
+  { category: 'レトロゲーム', keyword: 'Nintendo Game Boy original',  buyMax: 5000  },
+  { category: 'レトロゲーム', keyword: 'Neo Geo Pocket Color',        buyMax: 15000 },
   // 腕時計
-  { category: '腕時計', keyword: 'Seiko 5 vintage automatic',           buyMax: 15000 },
-  { category: '腕時計', keyword: 'Casio G-Shock DW-5600 vintage',       buyMax: 8000  },
-  { category: '腕時計', keyword: 'Citizen Bullhead chronograph vintage', buyMax: 20000 },
-  { category: '腕時計', keyword: 'Orient Star automatic vintage',        buyMax: 25000 },
+  { category: '腕時計', keyword: 'Seiko 5 vintage automatic',        buyMax: 15000 },
+  { category: '腕時計', keyword: 'Casio G-Shock DW-5600 vintage',    buyMax: 8000  },
   // ポケモンカード
-  { category: 'ポケカ', keyword: 'Pokemon card Japanese Charizard holo', buyMax: 5000  },
-  { category: 'ポケカ', keyword: 'Pokemon card Japanese booster box',    buyMax: 8000  },
-  { category: 'ポケカ', keyword: 'Pokemon Japanese 1st edition base set',buyMax: 10000 },
+  { category: 'ポケカ', keyword: 'Pokemon card Japanese Charizard holo', buyMax: 5000 },
+  { category: 'ポケカ', keyword: 'Pokemon card Japanese booster box',    buyMax: 8000 },
   // ビンテージオーディオ
-  { category: 'オーディオ', keyword: 'Sony Walkman TPS-L2',             buyMax: 15000 },
-  { category: 'オーディオ', keyword: 'Sony Walkman WM-2',               buyMax: 8000  },
-  { category: 'オーディオ', keyword: 'Technics SL-1200 turntable',      buyMax: 40000 },
-  // フィギュア・ホビー
-  { category: 'フィギュア', keyword: 'Bandai Perfect Grade Gundam',     buyMax: 15000 },
-  { category: 'フィギュア', keyword: 'Dragon Ball figure vintage Japan', buyMax: 5000  },
-  { category: 'フィギュア', keyword: 'Medicom RAH figure Japan',        buyMax: 20000 },
+  { category: 'オーディオ', keyword: 'Sony Walkman TPS-L2',          buyMax: 15000 },
+  { category: 'オーディオ', keyword: 'Technics SL-1200 turntable',   buyMax: 40000 },
+  // フィギュア
+  { category: 'フィギュア', keyword: 'Bandai Perfect Grade Gundam',  buyMax: 15000 },
 ];
 
 async function getEbayPriceForMonitor(keyword, appId) {
@@ -199,7 +185,7 @@ app.get('/api/monitor', async (req, res) => {
       const profit = net - target.buyMax;
       const margin = profit / avgJpy;
       results.push({ ...target, avgJpy, net, profit, margin, count: price.count });
-      await new Promise(r => setTimeout(r, 300));
+      await new Promise(r => setTimeout(r, 2000));
     }
 
     results.sort((a, b) => b.margin - a.margin);
